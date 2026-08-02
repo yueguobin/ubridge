@@ -32,6 +32,7 @@
 *.dSYM/
 ubridge
 ubridge.ini
+bench/marker_bench
 
 # IDE files
 .idea/

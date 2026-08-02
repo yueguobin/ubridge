@@ -2,14 +2,28 @@
 
 The mark filter's hot path (filter-loop iteration + cBPF match + marker_emit's
 per-call UDP sendto under a mutex) runs on every packet, so a regression there
-silently collapses relay throughput or loses signals. Two guards, both at a
-paced rate so counts are deterministic (an instant burst just tests the kernel
-UDP buffer, not ubridge):
+silently collapses relay throughput or loses signals. This is a *regression
+guard*, not a ceiling measurement: two checks at a paced rate (deterministic
+counts — an instant burst just tests the kernel UDP buffer, not ubridge):
 
   1. no collapse — a paced stream is still relayed at ~full rate with a `mark`
      filter attached (the passive tap adds no blocking work);
   2. sink keeps up — every match emits a UDP signal; assert the sink drains
      ~all of them (no marker_emit loss under sustained load).
+
+The ABSOLUTE ceiling lives in bench/ (a native sendmmsg/recvmmsg tool, since
+Python's ~130k pps GIL limit can't stress ubridge). That benchmark measured
+ubridge sustaining ~200k pps lossless (relay AND signal) with the mark filter,
+hard-saturating near ~209k pps — and signal/relay stayed 100% right through
+saturation. So the ~2k pps paced rate here is ~1% of capacity: deliberately
+conservative for a stable, deterministic regression check, not a performance
+claim.
+
+RECEIVER BUFFERS: the sink (`ms`) and relay receiver (`rbs`) MUST have a large
+SO_RCVBUF. Without it, their default ~212 KB kernel buffer (~221 datagrams)
+overflows during the send window (the test drains only AFTER sending), which
+shows up as a false ~37% "loss" that is pure test-harness buffer overflow, not
+ubridge dropping — ubridge never lost a packet in any run.
 
 Pure user-space (UDP + libpcap cBPF) — no sudo.
 """
@@ -26,7 +40,8 @@ PORT = 13100
 HOST = "127.0.0.1"
 REPO_UBRIDGE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "ubridge"))
 N = 200          # packets per stream
-GAP = 0.0005     # 0.5ms pacing -> ~2000 pps (well under ubridge's ceiling, no buf loss)
+GAP = 0.0005     # 0.5ms pacing -> ~2000 pps (~1% of ubridge's ~200k pps ceiling;
+                 # conservative + deterministic — see bench/ for the real ceiling)
 
 
 def _free_udp():
@@ -60,8 +75,12 @@ def main():
     la, lb = _free_udp(), _free_udp()
     ra, rb = _free_udp(), _free_udp()
 
-    ms = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); ms.bind((HOST, marker_port))   # signal sink
-    rbs = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); rbs.bind((HOST, rb))           # relay receiver
+    # Large SO_RCVBUF on the receivers: without it their default ~212 KB kernel
+    # buffer overflows during the send window (drain happens only after), faking a
+    # ~37% loss that is harness buffer overflow, not ubridge. See module docstring.
+    BIG = 4 * 1024 * 1024
+    ms = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); ms.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BIG); ms.bind((HOST, marker_port))   # signal sink
+    rbs = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); rbs.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BIG); rbs.bind((HOST, rb))          # relay receiver
     inj = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); inj.bind((HOST, ra))           # injector (=> tx)
 
     frame = _ip_frame()

@@ -72,7 +72,7 @@ endif
 $(NAME)	: $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(NAME) $(OBJ) $(LIBS)
 
-.PHONY: clean
+.PHONY: clean bench
 
 clean:
 	-rm -f $(OBJ)
@@ -80,6 +80,13 @@ clean:
 	-rm -f $(NAME)
 
 all	: $(NAME)
+
+# Native high-rate data-plane benchmark for the `mark` filter (see bench/).
+# Python tops out ~130k pps (GIL); this push past it to find ubridge's ceiling.
+bench	: bench/marker_bench
+
+bench/marker_bench	: bench/marker_bench.c
+	$(CC) -O2 -Wall -Wextra -o bench/marker_bench bench/marker_bench.c -lpthread
 
 install : $(NAME)
 	chmod +x $(NAME)
