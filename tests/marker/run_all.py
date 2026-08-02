@@ -6,6 +6,9 @@ SUITES = [
     "test_basic",
     "test_dir_filter",
     "test_pause",
+    "test_marker_boundary",
+    "test_marker_perf",
+    "test_iol_marker",
 ]
 
 
