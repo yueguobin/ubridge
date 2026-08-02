@@ -85,15 +85,15 @@ def main():
                 except socket.timeout:
                     r.check("frame relayed (passive)", False, "timeout")
 
-                # marker off -> no more signals
-                c.send("marker off")
+                # marker sink off -> no more signals
+                c.send("marker sink off")
                 inj.sendto(frame, ("127.0.0.1", la))
                 time.sleep(0.3)
                 try:
                     ms.recvfrom(4096)
-                    r.check("no signal after marker off", False, "got signal after off")
+                    r.check("no signal after marker sink off", False, "got signal after off")
                 except socket.timeout:
-                    r.check("no signal after marker off", True)
+                    r.check("no signal after marker sink off", True)
 
                 # done with f1; drop it so later checks see a known filter set
                 c.send("bridge delete_packet_filter br0 f1")

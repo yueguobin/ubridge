@@ -3,9 +3,9 @@
   * per-filter: `bridge enable_packet_filter <br> <name> on|off` flips a filter's
     `enabled` flag. A paused filter is bypassed by the relay loop (no signal,
     no pcap) but the frame is still relayed (passive tap, paused ≠ drop).
-  * global: `marker pause` / `marker resume` toggles a g_paused gate inside
-    marker_emit(), suppressing *all* signal emission while keeping the sink
-    socket open (unlike `marker off`, which tears the sink down).
+  * global: `marker pause` / `marker resume` toggles a g_paused gate that freezes
+    BOTH signal and pcap while keeping the sink socket open (unlike `marker sink
+    off`, which tears the sink down and only stops signals).
 
 Global pause overrides per-filter: even with the filter enabled, a paused
 marker emits nothing. Pure user-space (UDP + libpcap cBPF) — no sudo.
@@ -21,6 +21,7 @@ from common import Ubridge, Results  # noqa: E402
 
 PORT = 13080
 REPO_UBRIDGE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "ubridge"))
+PCAP = "/tmp/ubmark_pause.pcap"
 
 
 def _free_udp():
@@ -36,6 +37,10 @@ def _ip_frame():
     ip = struct.pack("!BBHHHBBH4s4s", 0x45, 0, 20, 0x1234, 0, 64, 17, 0,
                      bytes([10, 0, 0, 1]), bytes([10, 0, 0, 2]))
     return eth + ip
+
+
+def _pcap_size():
+    return os.path.getsize(PCAP) if os.path.exists(PCAP) else 0
 
 
 def main():
@@ -59,17 +64,23 @@ def main():
                 return n
 
     def inject(label, want_signals, want_relay=True):
-        """Inject one frame; assert signal count and (optionally) that it relayed."""
+        """Inject one frame; assert signal count, pcap growth, and relay."""
         drain()                                               # clear stale signals
         try:                                                  # clear stale relayed frames
             while True:
                 rbs.recvfrom(4096)
         except socket.timeout:
             pass
+        before = _pcap_size()
         inj_a.sendto(frame, ("127.0.0.1", la)); time.sleep(0.3)
         signals = drain()
         r.check(label + " (signals)", signals == want_signals,
                 "got %d, want %d" % (signals, want_signals))
+        # signal and pcap are gated together in mark_handler: pcap must grow when
+        # active and stay put when paused.
+        grew = _pcap_size() - before
+        r.check(label + " (pcap)", (grew > 0) == (want_signals > 0),
+                "pcap grew %d bytes (want %s)" % (grew, "growth" if want_signals else "no growth"))
         if want_relay:
             try:
                 rel, _ = rbs.recvfrom(4096)
@@ -86,7 +97,9 @@ def main():
                 c.send("bridge create br0")
                 c.send("bridge add_nio_udp br0 %d 127.0.0.1 %d" % (la, ra))   # NIO-A = source
                 c.send("bridge add_nio_udp br0 %d 127.0.0.1 %d" % (lb, rb))   # NIO-B = dest
-                c.send("bridge add_packet_filter br0 f mark ip")
+                if os.path.exists(PCAP):
+                    os.remove(PCAP)
+                c.send("bridge add_packet_filter br0 f mark ip pcap %s" % PCAP)
                 c.send("bridge start br0")
                 time.sleep(0.2)
 
@@ -125,6 +138,8 @@ def main():
     finally:
         for s in (ms, rbs, inj_a):
             s.close()
+        if os.path.exists(PCAP):
+            os.remove(PCAP)
 
     return 0 if r.summary() else 1
 

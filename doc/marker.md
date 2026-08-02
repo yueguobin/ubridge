@@ -79,8 +79,8 @@ bridge add_packet_filter br0 dhcp mark "udp port 67" tag 11 link 3 pcap /tmp/dhc
 ```
 marker sink <host> <port>   # set the UDP sink (gns3server)
 marker node <id>            # node id echoed in signals
-marker off                  # clear the sink (closes the UDP socket)
-marker pause                # suppress all signals, keep the sink open
+marker sink off             # clear the sink (closes the UDP socket; pcap continues)
+marker pause                # freeze all signals + pcap, keep the sink open
 marker resume               # re-enable emission after `marker pause`
 marker status               # enabled / paused / sink / node / emitted count
 ```
@@ -115,11 +115,11 @@ There are two independent levers for stopping signal emission:
   `iol_bridge enable_packet_filter <bridge> <bay> <unit> <name> on|off`.
   Works for any filter type, not just `mark`.
 
-- **Global** (`marker` module) — `marker pause` / `marker resume` flip a gate
-  inside `marker_emit()` that suppresses **all** signals, regardless of
-  per-filter state. Unlike `marker off`, the sink socket stays open, so resume
-  is instant and `emitted`/sink config are retained. Global pause overrides
-  per-filter: a paused marker emits nothing even if every filter is enabled.
+- **Global** (`marker` module) — `marker pause` / `marker resume` flip a gate that
+  freezes **all** signal emission **and** pcap, regardless of per-filter state.
+  Unlike `marker sink off` (which tears the sink down and only stops signals),
+  the sink socket stays open, so resume is instant and `emitted`/sink config are
+  retained.
 
 State of both levers is reported by `marker status` (`paused=`) and the
 per-filter flag lives on the filter itself.
@@ -191,7 +191,7 @@ while True:
 `tests/marker/` stands up a UDP listener as the sink, injects an IP frame into
 a UDP-NIO bridge with a `mark "ip" tag 7` filter, and asserts the signal arrives
 with the right node/filter/tag/len, that the frame was still relayed (passive),
-and that `marker off` stops the signals.
+and that `marker sink off` stops the signals.
 
 > Note: ubridge's UDP NIO `connect()`s to the configured remote, so it only
 > accepts packets whose source is that remote — the test binds the injector to

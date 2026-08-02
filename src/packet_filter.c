@@ -495,7 +495,7 @@ static int mark_handler(void *pkt, size_t len, void *opt, int direction)
           int dir_ok = (data->dir_match == MARK_DIR_BOTH
                         || (data->dir_match == MARK_DIR_TX && direction == PKT_DIR_TX)
                         || (data->dir_match == MARK_DIR_RX && direction == PKT_DIR_RX));
-          if (dir_ok) {
+          if (dir_ok && !marker_is_paused()) {
              marker_emit(data->name, data->tag, data->link, len, (direction == PKT_DIR_TX) ? "tx" : "rx");
              if (data->cap)
                 pcap_capture_packet(data->cap, pkt, len);

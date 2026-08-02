@@ -152,6 +152,18 @@ void marker_emit(const char *filter_name, const char *tag, const char *link, siz
     pthread_mutex_unlock(&g_lock);
 }
 
+/* Is global emission paused (`marker pause`)? Read under the lock so the flag
+ * flip from cmd_pause/cmd_resume is seen consistently. The mark handler uses
+ * this to freeze signal + pcap together. */
+int marker_is_paused(void)
+{
+    int paused;
+    pthread_mutex_lock(&g_lock);
+    paused = g_paused;
+    pthread_mutex_unlock(&g_lock);
+    return paused;
+}
+
 int marker_status(marker_status_t *out)
 {
     if (!out)
@@ -170,9 +182,17 @@ int marker_status(marker_status_t *out)
  * `marker` module commands
  * -------------------------------------------------------------------------- */
 
-/* marker sink <host> <port> */
+/* marker sink <host> <port> | marker sink off (clear the sink) */
 static int cmd_sink(hypervisor_conn_t *conn, int argc, char *argv[])
 {
+    /* `marker sink off` — tear down the sink (formerly the separate `marker
+     * off` command; folded here so the name matches what it does). */
+    if (argc == 1 && !strcmp(argv[0], "off")) {
+        marker_clear_sink();
+        hypervisor_send_reply(conn, HSC_INFO_OK, 1, "marker sink cleared");
+        return 0;
+    }
+
     char *host = argv[0];
     char *end;
     long port = strtol(argv[1], &end, 10);
@@ -196,14 +216,6 @@ static int cmd_node(hypervisor_conn_t *conn, int argc, char *argv[])
 {
     marker_set_node(argv[0]);
     hypervisor_send_reply(conn, HSC_INFO_OK, 1, "marker node set to %s", argv[0]);
-    return 0;
-}
-
-/* marker off — clear the sink */
-static int cmd_off(hypervisor_conn_t *conn, int argc, char *argv[])
-{
-    marker_clear_sink();
-    hypervisor_send_reply(conn, HSC_INFO_OK, 1, "marker sink cleared");
     return 0;
 }
 
@@ -241,9 +253,8 @@ static int cmd_resume(hypervisor_conn_t *conn, int argc, char *argv[])
 }
 
 static hypervisor_cmd_t marker_cmd_array[] = {
-   { "sink",   2, 2, cmd_sink,   NULL },   /* <host> <port> */
+   { "sink",   1, 2, cmd_sink,   NULL },   /* <host> <port> | off */
    { "node",   1, 1, cmd_node,   NULL },
-   { "off",    0, 0, cmd_off,    NULL },
    { "pause",  0, 0, cmd_pause,  NULL },
    { "resume", 0, 0, cmd_resume, NULL },
    { "status", 0, 0, cmd_status, NULL },

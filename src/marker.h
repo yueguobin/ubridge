@@ -39,6 +39,11 @@
  * (NULL → "-"): "tx" = capture node sending, "rx" = receiving. */
 void marker_emit(const char *filter_name, const char *tag, const char *link, size_t len, const char *dir);
 
+/* TRUE when global emission is paused (`marker pause`). The `mark` handler
+ * checks this to freeze BOTH signal and pcap on a paused marker — pause means
+ * "no observable activity", not just "no signal". */
+int  marker_is_paused(void);
+
 /* Configure / clear the UDP sink (consumer = gns3server). 0 or -errno. */
 int  marker_set_sink(const char *host, int port);
 int  marker_clear_sink(void);
