@@ -22,6 +22,32 @@ Each per-node ubridge is a pure **UDP client**: on match, one `sendto` to the
 configured sink. No listener, no thread, no per-node server. `marker_emit` is a
 no-op when no sink is set, so `mark` filters are cheap when unused.
 
+## Performance
+
+The mark filter's per-packet cost is: filter-loop iteration + cBPF match +
+`marker_emit`'s one `sendto` under a mutex. Measured with a native
+`sendmmsg`/`recvmmsg` benchmark (`bench/`, since Python's ~130k pps GIL ceiling
+can't stress ubridge), 2s windows, 34-byte frames, `mark ip`:
+
+| input pps | relayed | relay% | **sig/relay** |
+|-----------|---------|--------|---------------|
+| 50k       | 100032  | 100.0% | **100.0%**    |
+| 200k      | 391056  | 97.8%  | **100.0%**    |
+| 500k      | 412359  | 41.2%  | **100.0%**    |
+| 1M        | 418992  | 39.6%  | **100.0%**    |
+
+- **~200k pps lossless** — relay and signal both stay ~100% up to ~200k pps.
+- **~209k pps hard saturation** — the relayed rate caps there; above it the
+  relay thread can't drain the NIO input buffer and the kernel drops on input.
+- **`sig/relay` is 100.0% through saturation** — `marker_emit` never drops a
+  signal, even when 60% of packets are being lost at the input. The per-match
+  `sendto` is not the bottleneck and adds zero signal loss.
+
+So a `mark` filter is effectively free at real GNS3 traffic rates (a busy lab
+link is low-thousands of pps). Reproduce with `make bench && python3
+bench/run_bench.py`; methodology in [`bench/README.md`](../bench/README.md). The
+paced regression guard lives in `tests/marker/test_marker_perf.py`.
+
 ## The `mark` packet filter
 
 Registered under the `bridge` module like the other filter types:
@@ -188,10 +214,21 @@ while True:
 
 ## Testing
 
-`tests/marker/` stands up a UDP listener as the sink, injects an IP frame into
-a UDP-NIO bridge with a `mark "ip" tag 7` filter, and asserts the signal arrives
-with the right node/filter/tag/len, that the frame was still relayed (passive),
-and that `marker sink off` stops the signals.
+`tests/marker/` (run via `run_all.py`, **56 checks**) covers:
+
+- **test_basic** — happy path: a `mark "ip" tag 7` filter fires a signal with
+  the right node/filter/tag/len, the frame is still relayed (passive), and
+  `marker sink off` stops the signals.
+- **test_dir_filter** — `dir tx`/`rx` fire on the correct ingress only.
+- **test_pause** — per-filter `enable_packet_filter` and global `marker
+  pause`/`resume`, with pcap-stops-on-pause assertions.
+- **test_marker_boundary** — invalid `dir`/pcap rejected at add time; default
+  fires both directions; near-MTU match; 1-byte relay; generic enable on a `bpf`
+  drop filter.
+- **test_marker_perf** — paced regression guard: the mark filter doesn't
+  collapse throughput and the sink drains ~every match (see Performance above).
+- **test_iol_marker** — the IOL filter loop / direction constants / per-port
+  enable, via a fake IOL instance over the netio unix socket.
 
 > Note: ubridge's UDP NIO `connect()`s to the configured remote, so it only
 > accepts packets whose source is that remote — the test binds the injector to
@@ -200,5 +237,5 @@ and that `marker sink off` stops the signals.
 **Pure user-space (UDP + libpcap cBPF) — no `CAP_NET_ADMIN` needed, no sudo:**
 
 ```bash
-cd tests/marker && python3 run_all.py   # 13/13 PASS
+cd tests/marker && python3 run_all.py   # 56/56 PASS
 ```
