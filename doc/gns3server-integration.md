@@ -251,6 +251,16 @@ flushes the pcap; file persists). To change the BPF, delete then re-add.
   pcap regardless of per-filter state — use for a project-wide "mute markers"
   toggle. (pcap continues under `marker sink off`, which only stops signals.)
 
+> **Why no definition-level command?** A "marker-definition" (a reusable rule
+> instantiated as per-link copies) is a **gns3server abstraction** — ubridge has
+> no concept of it; it only sees individually-named filters. So there is no
+> `marker-def pause` primitive here: pausing a definition is **gns3server
+> composing the per-filter lever** — enumerate the definition's copies (e.g.
+> `global-<name>`) across every link/ubridge and issue one `enable_packet_filter
+> … off` per copy; resume is the same with `on`. gns3server owns the def's
+> `paused` state (`.gns3`) and applies it when new links inherit a copy. The two
+> never collide because gns3server + webui enforce definition-name uniqueness.
+
 ### 3.3 What gns3server receives (real-time)
 
 One UDP datagram per match, line-based ASCII:
