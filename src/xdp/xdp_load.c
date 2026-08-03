@@ -15,6 +15,7 @@
 #include <bpf/bpf.h>
 
 #include "xdp_load.h"
+#include "xdp_events.h"
 #include "ubridge_xdp.skel.h"
 
 struct xdp_load {
@@ -114,6 +115,26 @@ int xdp_load_set_peer(struct xdp_load *x, const char *peer_ifname)
     val.ifindex = ifindex;          /* bpf_prog stays 0 (added in increment C) */
 
     if (bpf_map_update_elem(bpf_map__fd(x->skel->maps.fwd), &key, &val, BPF_ANY))
+        return -errno;
+    return 0;
+}
+
+int xdp_load_set_peer_rx(struct xdp_load *x, const char *peer_ifname, int rx_enabled)
+{
+    struct xdp_obs_val val;
+    __u32 ifindex;
+
+    if (!x)
+        return -EINVAL;
+
+    ifindex = if_nametoindex(peer_ifname);
+    if (!ifindex)
+        return -ENODEV;
+
+    memset(&val, 0, sizeof(val));
+    val.rx_enabled = rx_enabled ? 1 : 0;
+
+    if (bpf_map_update_elem(bpf_map__fd(x->skel->maps.observation), &ifindex, &val, BPF_ANY))
         return -errno;
     return 0;
 }

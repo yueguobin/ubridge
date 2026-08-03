@@ -1,17 +1,16 @@
 /* ubridge_xdp.bpf.c — the ubridge XDP dataplane (Phase 2).
  *
- * Compiled separately (clang -target bpf) into an object, turned into a libbpf
- * skeleton, and driven by the userspace loader (xdp_load.c).
- *
  *   A: load/attach/counter foundation (XDP_PASS + per-CPU count).
  *   B: forwarding via DEVMAP egress redirect (bpf_redirect_map, flags=0).
- *   C1 (this file): ingress tx-marker. When enabled, an IPv4 match (placeholder
- *      until real cBPF->eBPF in increment F) reserves a marker event in the
- *      ringbuf; the userspace consumer formats it into the contract MARK line
- *      and sendto()s the sink. The marker runs BEFORE forwarding so it fires
- *      whether or not a peer is configured. Bidirectional rx-coverage (the
- *      shared observation map + sender-side peer marker) is C2. See
- *      doc/xdp-tap-mode.md.
+ *   C1: ingress tx-marker — IPv4 match -> ringbuf event -> MARK line -> sink.
+ *   C2 (this file): marker-coverage seam. When forwarding, the sender also
+ *      emits a dir=RX event for the peer if the peer's observation entry has
+ *      rx_enabled — because the egress redirect does not run the peer's netdev
+ *      XDP, the receiver's rx-direction marker must run on the sender. The
+ *      observation map is keyed by peer ifindex (read from the DEVMAP value).
+ *
+ * Marker match is a placeholder (IPv4) until real cBPF->eBPF in increment F.
+ * See doc/xdp-tap-mode.md.
  */
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
@@ -45,11 +44,33 @@ struct {
     __uint(max_entries, 1);
 } marker_ctrl SEC(".maps");
 
-/* Marker events → userspace. Drained by the ringbuf consumer (xdp_marker). */
+/* Marker events -> userspace. Drained by the ringbuf consumer (xdp_marker). */
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 64 * 1024);
 } events SEC(".maps");
+
+/* Marker-observation map (the seam): keyed by TAP ifindex -> rx_enabled.
+ * Read by the sender before an egress redirect to decide whether to emit the
+ * peer's dir=RX marker. Populated by xdp_load_set_peer_rx(). */
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(struct xdp_obs_val));
+    __uint(max_entries, 64);
+} observation SEC(".maps");
+
+static __always_inline void emit_marker(__u32 dir, __u32 len, __u32 marker_id)
+{
+    struct xdp_marker_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
+    if (!e)
+        return;
+    e->ts_ns     = bpf_ktime_get_ns();
+    e->len       = len;
+    e->dir       = dir;
+    e->marker_id = marker_id;
+    bpf_ringbuf_submit(e, 0);
+}
 
 SEC("xdp")
 int ubridge_xdp_main(struct xdp_md *ctx)
@@ -59,29 +80,30 @@ int ubridge_xdp_main(struct xdp_md *ctx)
     if (cnt)
         __sync_fetch_and_add(cnt, 1);
 
-    /* Marker (C1): emit on IPv4 match when enabled. Placeholder match — real
-     * tcpdump/cBPF->eBPF expressions come in increment F. */
-    __u32 *enabled = bpf_map_lookup_elem(&marker_ctrl, &key);
-    if (enabled && *enabled) {
-        void *data     = (void *)(long)ctx->data;
-        void *data_end = (void *)(long)ctx->data_end;
-        struct ethhdr *eth = data;
-        if ((void *)(eth + 1) <= data_end &&
-            eth->h_proto == bpf_htons(ETH_P_IP)) {
-            struct xdp_marker_event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-            if (e) {
-                e->ts_ns     = bpf_ktime_get_ns();
-                e->len       = (__u32)(data_end - data);
-                e->dir       = XDP_DIR_TX;        /* C1: ingress marker = node tx */
-                e->marker_id = 0;
-                bpf_ringbuf_submit(e, 0);
-            }
-        }
-    }
+    void *data     = (void *)(long)ctx->data;
+    void *data_end = (void *)(long)ctx->data_end;
+    struct ethhdr *eth = data;
+    int is_ipv4 = ((void *)(eth + 1) <= data_end) &&
+                  (eth->h_proto == bpf_htons(ETH_P_IP));
+    __u32 len = (__u32)(data_end - data);
 
-    /* Forward: redirect to peer egress if configured, else PASS. */
-    if (bpf_map_lookup_elem(&fwd, &key))
+    __u32 *enabled = bpf_map_lookup_elem(&marker_ctrl, &key);
+    int menabled = enabled && *enabled;
+
+    /* Own tx-marker (ingress). */
+    if (menabled && is_ipv4)
+        emit_marker(XDP_DIR_TX, len, 0);
+
+    /* Forward + the peer's rx-marker (the seam), run on the sender. */
+    struct bpf_devmap_val *peer = bpf_map_lookup_elem(&fwd, &key);
+    if (peer) {
+        if (menabled && is_ipv4) {
+            struct xdp_obs_val *obs = bpf_map_lookup_elem(&observation, &peer->ifindex);
+            if (obs && obs->rx_enabled)
+                emit_marker(XDP_DIR_RX, len, 0);
+        }
         return bpf_redirect_map(&fwd, key, 0);
+    }
 
     return XDP_PASS;
 }

@@ -3,9 +3,10 @@ import importlib
 import sys
 
 SUITES = [
-    "test_xdp_attach",    # increment A: load/attach/counter foundation
-    "test_xdp_forward",   # increment B: DEVMAP egress redirect forwarding
-    "test_xdp_marker",    # increment C1: ingress tx-marker -> ringbuf -> MARK -> sink
+    "test_xdp_attach",        # increment A: load/attach/counter foundation
+    "test_xdp_forward",       # increment B: DEVMAP egress redirect forwarding
+    "test_xdp_marker",        # increment C1: ingress tx-marker -> ringbuf -> MARK -> sink
+    "test_xdp_marker_bidir",  # increment C2: marker-coverage seam (sender-side rx)
 ]
 
 

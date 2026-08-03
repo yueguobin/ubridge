@@ -20,4 +20,14 @@ struct xdp_marker_event {
     __u32 marker_id;   /* which marker fired (userspace owns names) */
 };
 
+/* Marker-observation entry, keyed by TAP ifindex in the shared `observation`
+ * map. Read by the *sender's* XDP right before an egress redirect: if the peer
+ * has rx_enabled, the sender emits a dir=RX event on the peer's behalf — the
+ * marker-coverage seam (egress redirect does not run the peer's netdev XDP, so
+ * the receiver's rx-direction marker must run on the sender). See
+ * doc/xdp-tap-mode.md. */
+struct xdp_obs_val {
+    __u32 rx_enabled;  /* peer wants its rx-direction marker observed */
+};
+
 #endif /* XDP_EVENTS_H */

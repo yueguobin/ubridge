@@ -1,11 +1,15 @@
-/* xdp_marker.c — Phase 2 increment C1: ingress tx-marker -> ringbuf -> MARK line -> sink.
+/* xdp_marker.c — Phase 2 increments C1/C2: marker -> ringbuf -> MARK line -> sink.
  *
- *   xdp_marker <ifname> <sink_host> <sink_port> [node] [filter] [window=4]
+ *   xdp_marker <ifname> <sink_host> <sink_port> [node] [filter] [window=4] [peer_ifname]
  *
- * Attaches the XDP program, enables the ingress marker, drains the events
- * ringbuf on a thread, and for each match sends one MARK datagram to the sink
- * (same line format as the userspace marker module). Prints READY, then
- * EMITTED=<n> after the window.
+ * Attaches the XDP program, enables the marker, drains the events ringbuf on a
+ * thread, and for each match sends one MARK datagram to the sink (same line
+ * format as the userspace marker module). Prints READY, then EMITTED=<n>.
+ *
+ * With [peer_ifname] set (C2): also forwards to the peer (DEVMAP egress redirect)
+ * AND marks the peer's rx-marker observed — so the sender emits a dir=RX event
+ * on the peer's behalf (the marker-coverage seam). Without it, only the ingress
+ * tx-marker fires (C1).
  *
  * The marker name fields (node/filter) are userspace config; the eBPF event
  * carries only ts/len/dir/marker_id (see xdp_events.h).
@@ -63,7 +67,7 @@ static void *consumer_thread(void *arg)
 
 int main(int argc, char **argv)
 {
-    const char *ifname, *sink_host, *node, *filter;
+    const char *ifname, *sink_host, *node, *filter, *peer;
     int sink_port, window, err, sink_fd;
     struct xdp_load *x = NULL;
     struct sockaddr_in sa;
@@ -71,7 +75,8 @@ int main(int argc, char **argv)
     setvbuf(stdout, NULL, _IOLBF, 0);
 
     if (argc < 4) {
-        fprintf(stderr, "usage: %s <ifname> <sink_host> <sink_port> [node] [filter] [window=4]\n", argv[0]);
+        fprintf(stderr, "usage: %s <ifname> <sink_host> <sink_port> [node] [filter] [window=4] [peer_ifname]\n",
+                argv[0]);
         return 2;
     }
     ifname    = argv[1];
@@ -80,12 +85,24 @@ int main(int argc, char **argv)
     node      = (argc > 4) ? argv[4] : "node";
     filter    = (argc > 5) ? argv[5] : "filter";
     window    = (argc > 6) ? atoi(argv[6]) : 4;
+    peer      = (argc > 7) ? argv[7] : NULL;        /* C2: forward + peer rx-marker */
     if (window < 1) window = 1;
 
     err = xdp_load_attach(ifname, &x);
     if (err) {
         fprintf(stderr, "xdp_load_attach(%s) failed: %d (%s)\n", ifname, err, strerror(-err));
         return 1;
+    }
+
+    if (peer) {
+        err = xdp_load_set_peer(x, peer);
+        if (err) {
+            fprintf(stderr, "xdp_load_set_peer(%s) failed: %d (%s)\n", peer, err, strerror(-err));
+            xdp_load_detach(x); return 1;
+        }
+        err = xdp_load_set_peer_rx(x, peer, 1);
+        if (err)
+            fprintf(stderr, "xdp_load_set_peer_rx(%s): %d (%s)\n", peer, err, strerror(-err));
     }
 
     sink_fd = socket(AF_INET, SOCK_DGRAM, 0);

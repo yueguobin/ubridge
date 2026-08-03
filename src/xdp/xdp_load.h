@@ -26,6 +26,12 @@ void xdp_load_detach(struct xdp_load *x);
  * peer's egress. With no peer set the program does XDP_PASS. Returns 0 / -errno. */
 int xdp_load_set_peer(struct xdp_load *x, const char *peer_ifname);
 
+/* Configure the marker-coverage seam (C2): mark that `peer_ifname` wants its
+ * rx-direction marker observed. The sender's XDP reads this before an egress
+ * redirect and, if set, emits a dir=RX event on the peer's behalf. rx_enabled
+ * = 1 to observe, 0 to clear. Returns 0 / -errno. */
+int xdp_load_set_peer_rx(struct xdp_load *x, const char *peer_ifname, int rx_enabled);
+
 /* File descriptor of the marker-events ringbuf (for ring_buffer__new). */
 int xdp_load_events_fd(struct xdp_load *x);
 
