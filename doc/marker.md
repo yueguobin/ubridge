@@ -214,7 +214,7 @@ while True:
 
 ## Testing
 
-`tests/marker/` (run via `run_all.py`, **56 checks**) covers:
+`tests/marker/` (run via `run_all.py`, **76 checks**) covers:
 
 - **test_basic** — happy path: a `mark "ip" tag 7` filter fires a signal with
   the right node/filter/tag/len, the frame is still relayed (passive), and
@@ -227,6 +227,12 @@ while True:
   drop filter.
 - **test_marker_perf** — paced regression guard: the mark filter doesn't
   collapse throughput and the sink drains ~every match (see Performance above).
+- **test_raw_marker** — the node↔ubridge join as `add_nio_linux_raw`
+  (AF_PACKET): a veth pair stands in for a node TAP; asserts the mark filter's
+  enable/disable, `marker pause`/`resume`, pcap, `dir`, and passive relay behave
+  identically to the UDP-NIO path (the filter loop is NIO-type-agnostic). Phase 1
+  of the TAP+XDP mode — see [`xdp-tap-mode.md`](xdp-tap-mode.md). Needs root
+  (veth + AF_PACKET); skips gracefully otherwise.
 - **test_iol_marker** — the IOL filter loop / direction constants / per-port
   enable, via a fake IOL instance over the netio unix socket.
 
@@ -237,5 +243,5 @@ while True:
 **Pure user-space (UDP + libpcap cBPF) — no `CAP_NET_ADMIN` needed, no sudo:**
 
 ```bash
-cd tests/marker && python3 run_all.py   # 56/56 PASS
+cd tests/marker && python3 run_all.py   # 76/76 PASS
 ```

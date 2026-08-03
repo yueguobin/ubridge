@@ -8,6 +8,7 @@ SUITES = [
     "test_pause",
     "test_marker_boundary",
     "test_marker_perf",
+    "test_raw_marker",
     "test_iol_marker",
 ]
 
