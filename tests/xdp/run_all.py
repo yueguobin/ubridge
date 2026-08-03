@@ -8,6 +8,7 @@ SUITES = [
     "test_xdp_marker",        # increment C1: ingress tx-marker -> ringbuf -> MARK -> sink
     "test_xdp_marker_bidir",  # increment C2: marker-coverage seam (sender-side rx)
     "test_xdp_filter",        # increment D: filter DROP/PASS + control bits (enabled/direction)
+    "test_xdp_control",       # increment E: control verbs -> map updates (live behavior flips)
 ]
 
 

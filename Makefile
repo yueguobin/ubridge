@@ -78,7 +78,7 @@ clean:
 	-rm -f $(OBJ)
 	-rm -f *~
 	-rm -f $(NAME)
-	-rm -f $(XDP_OBJ) $(XDP_SKEL) $(XDP_SMOKE) $(XDP_FWD) $(XDP_MARKER) $(XDP_FILTER)
+	-rm -f $(XDP_OBJ) $(XDP_SKEL) $(XDP_SMOKE) $(XDP_FWD) $(XDP_MARKER) $(XDP_FILTER) $(XDP_CONTROL)
 
 all	: $(NAME)
 
@@ -105,6 +105,7 @@ XDP_SMOKE = $(XDP_DIR)/xdp_smoke
 XDP_FWD   = $(XDP_DIR)/xdp_fwd
 XDP_MARKER = $(XDP_DIR)/xdp_marker
 XDP_FILTER = $(XDP_DIR)/xdp_filter
+XDP_CONTROL = $(XDP_DIR)/xdp_control
 
 # eBPF object (CO-RE not needed yet — this program uses no kernel internals).
 $(XDP_OBJ): $(XDP_DIR)/ubridge_xdp.bpf.c
@@ -130,7 +131,12 @@ $(XDP_MARKER): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_marker.c $(XDP_D
 $(XDP_FILTER): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_filter.c $(XDP_DIR)/xdp_load.h $(XDP_DIR)/xdp_events.h
 	$(CC) $(CFLAGS) -I$(XDP_DIR) -o $@ $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_filter.c -lbpf -lelf -lz
 
-xdp: $(XDP_SMOKE) $(XDP_FWD) $(XDP_MARKER) $(XDP_FILTER)
+# Control-plane proof (increment E): ubridge verbs -> map updates over a live
+# forward+marker+filter dataplane. Reads control verbs from stdin.
+$(XDP_CONTROL): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_control.c $(XDP_DIR)/xdp_load.h $(XDP_DIR)/xdp_events.h
+	$(CC) $(CFLAGS) -I$(XDP_DIR) -o $@ $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_control.c -lbpf -lelf -lz -lpthread
+
+xdp: $(XDP_SMOKE) $(XDP_FWD) $(XDP_MARKER) $(XDP_FILTER) $(XDP_CONTROL)
 
 # Verify the eBPF toolchain is present; prints a distro install line if not.
 check-xdp:

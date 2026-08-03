@@ -39,6 +39,15 @@ int xdp_load_set_peer_rx(struct xdp_load *x, const char *peer_ifname, int rx_ena
  * forwarding; PASS is the default forward. Returns 0 / -errno. */
 int xdp_load_set_filter(struct xdp_load *x, int filter_id, int action, int direction, int enabled);
 
+/* Control-plane translation (E): change ONE field of an already-installed filter
+ * via a read-modify-write on filter_ctrl[filter_id] — the runtime equivalent of
+ * ubridge's `enable_packet_filter <name> on|off` (enable) and direction/action
+ * changes. These let a control verb flip the live dataplane's behavior without
+ * re-stating the whole filter. Each returns 0 / -errno. */
+int xdp_load_filter_set_enabled(struct xdp_load *x, int filter_id, int enabled);
+int xdp_load_filter_set_action(struct xdp_load *x, int filter_id, int action);
+int xdp_load_filter_set_direction(struct xdp_load *x, int filter_id, int direction);
+
 /* File descriptor of the marker-events ringbuf (for ring_buffer__new). */
 int xdp_load_events_fd(struct xdp_load *x);
 

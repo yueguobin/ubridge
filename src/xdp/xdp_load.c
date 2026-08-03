@@ -164,6 +164,50 @@ int xdp_load_set_filter(struct xdp_load *x, int filter_id, int action, int direc
     return 0;
 }
 
+/* Read-modify-write one field of filter_ctrl[filter_id] (E: runtime control).
+ * field: 0=enabled, 1=action, 2=direction. ARRAY entries always exist (zeroed
+ * until first written), so the lookup cannot miss — it returns the current
+ * value, we patch one field, and write it back. */
+static int filter_update_field(struct xdp_load *x, int filter_id, int field, __u32 newv)
+{
+    struct xdp_filter_val val;
+    __u32 key = filter_id;
+    int fd;
+
+    if (!x)
+        return -EINVAL;
+
+    fd = bpf_map__fd(x->skel->maps.filter_ctrl);
+    if (bpf_map_lookup_elem(fd, &key, &val))
+        return -errno;
+
+    switch (field) {
+    case 0: val.enabled   = newv; break;
+    case 1: val.action    = newv; break;
+    case 2: val.direction = newv; break;
+    default: return -EINVAL;
+    }
+
+    if (bpf_map_update_elem(fd, &key, &val, BPF_ANY))
+        return -errno;
+    return 0;
+}
+
+int xdp_load_filter_set_enabled(struct xdp_load *x, int filter_id, int enabled)
+{
+    return filter_update_field(x, filter_id, 0, enabled ? 1 : 0);
+}
+
+int xdp_load_filter_set_action(struct xdp_load *x, int filter_id, int action)
+{
+    return filter_update_field(x, filter_id, 1, (__u32)action);
+}
+
+int xdp_load_filter_set_direction(struct xdp_load *x, int filter_id, int direction)
+{
+    return filter_update_field(x, filter_id, 2, (__u32)direction);
+}
+
 int xdp_load_set_marker_enabled(struct xdp_load *x, int enabled)
 {
     __u32 key = 0, val = enabled ? 1 : 0;
