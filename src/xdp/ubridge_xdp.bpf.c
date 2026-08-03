@@ -3,13 +3,17 @@
  *   A: load/attach/counter foundation (XDP_PASS + per-CPU count).
  *   B: forwarding via DEVMAP egress redirect (bpf_redirect_map, flags=0).
  *   C1: ingress tx-marker — IPv4 match -> ringbuf event -> MARK line -> sink.
- *   C2 (this file): marker-coverage seam. When forwarding, the sender also
- *      emits a dir=RX event for the peer if the peer's observation entry has
- *      rx_enabled — because the egress redirect does not run the peer's netdev
- *      XDP, the receiver's rx-direction marker must run on the sender. The
- *      observation map is keyed by peer ifindex (read from the DEVMAP value).
+ *   C2: marker-coverage seam. When forwarding, the sender also emits a dir=RX
+ *      event for the peer if the peer's observation entry has rx_enabled —
+ *      because the egress redirect does not run the peer's netdev XDP, the
+ *      receiver's rx-direction marker must run on the sender. The observation
+ *      map is keyed by peer ifindex (read from the DEVMAP value).
+ *   D (this file): filter action layer — per-filter DROP/PASS in `filter_ctrl`.
+ *      DROP returns before the redirect (so the peer's seam rx-marker is
+ *      suppressed for dropped packets); PASS is the default forward. Control
+ *      bits: enabled (bypass) and direction (applies on the sending XDP).
  *
- * Marker match is a placeholder (IPv4) until real cBPF->eBPF in increment F.
+ * Marker / filter match is a placeholder (IPv4) until real cBPF->eBPF in F.
  * See doc/xdp-tap-mode.md.
  */
 #include <linux/bpf.h>
@@ -49,6 +53,19 @@ struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 64 * 1024);
 } events SEC(".maps");
+
+/* Filter control (increment D): keyed by filter_id -> {action, enabled,
+ * direction}. Match is the IPv4 placeholder (ethertype 0x0800) until real
+ * cBPF->eBPF in increment F. DROP stops the packet before forwarding (so the
+ * seam's dir=RX marker is suppressed too — the peer never receives it); PASS is
+ * the default forward. enabled=0 bypasses; direction selects whether the filter
+ * applies on this (sending) XDP. Populated by xdp_load_set_filter(). */
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(struct xdp_filter_val));
+    __uint(max_entries, 8);
+} filter_ctrl SEC(".maps");
 
 /* Marker-observation map (the seam): keyed by TAP ifindex -> rx_enabled.
  * Read by the sender before an egress redirect to decide whether to emit the
@@ -90,9 +107,21 @@ int ubridge_xdp_main(struct xdp_md *ctx)
     __u32 *enabled = bpf_map_lookup_elem(&marker_ctrl, &key);
     int menabled = enabled && *enabled;
 
-    /* Own tx-marker (ingress). */
+    /* Own tx-marker (ingress) — the node sent it; observed whether or not a
+     * downstream filter drops it (observation vs action are separate planes). */
     if (menabled && is_ipv4)
         emit_marker(XDP_DIR_TX, len, 0);
+
+    /* Filter (D): per-filter DROP/PASS. The node's own TAP XDP only sees this
+     * node's TX, so a filter with direction BOTH/TX applies here; RX does not.
+     * Match is the IPv4 placeholder until cBPF->eBPF (F). DROP returns before
+     * the redirect, so the peer never receives the packet — therefore the seam's
+     * dir=RX marker (below) is correctly suppressed for dropped packets. */
+    struct xdp_filter_val *filt = bpf_map_lookup_elem(&filter_ctrl, &key);
+    if (filt && filt->enabled && is_ipv4 &&
+        (filt->direction == XDP_FILT_DIR_BOTH || filt->direction == XDP_FILT_DIR_TX) &&
+        filt->action == XDP_FILT_ACT_DROP)
+        return XDP_DROP;
 
     /* Forward + the peer's rx-marker (the seam), run on the sender. */
     struct bpf_devmap_val *peer = bpf_map_lookup_elem(&fwd, &key);

@@ -32,6 +32,13 @@ int xdp_load_set_peer(struct xdp_load *x, const char *peer_ifname);
  * = 1 to observe, 0 to clear. Returns 0 / -errno. */
 int xdp_load_set_peer_rx(struct xdp_load *x, const char *peer_ifname, int rx_enabled);
 
+/* Configure the XDP filter (D): writes filter_ctrl[filter_id] = {action,
+ * direction, enabled}. action is XDP_FILT_ACT_DROP/PASS; direction is
+ * XDP_FILT_DIR_BOTH/TX/RX; enabled 1 = active, 0 = bypassed. Match is the IPv4
+ * placeholder until real cBPF->eBPF (F). DROP stops a matching packet before
+ * forwarding; PASS is the default forward. Returns 0 / -errno. */
+int xdp_load_set_filter(struct xdp_load *x, int filter_id, int action, int direction, int enabled);
+
 /* File descriptor of the marker-events ringbuf (for ring_buffer__new). */
 int xdp_load_events_fd(struct xdp_load *x);
 

@@ -146,6 +146,24 @@ int xdp_load_events_fd(struct xdp_load *x)
     return bpf_map__fd(x->skel->maps.events);
 }
 
+int xdp_load_set_filter(struct xdp_load *x, int filter_id, int action, int direction, int enabled)
+{
+    struct xdp_filter_val val;
+    __u32 key = filter_id;
+
+    if (!x)
+        return -EINVAL;
+
+    memset(&val, 0, sizeof(val));
+    val.action    = (__u32)action;
+    val.direction = (__u32)direction;
+    val.enabled   = enabled ? 1 : 0;
+
+    if (bpf_map_update_elem(bpf_map__fd(x->skel->maps.filter_ctrl), &key, &val, BPF_ANY))
+        return -errno;
+    return 0;
+}
+
 int xdp_load_set_marker_enabled(struct xdp_load *x, int enabled)
 {
     __u32 key = 0, val = enabled ? 1 : 0;
