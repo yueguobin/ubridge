@@ -78,7 +78,7 @@ clean:
 	-rm -f $(OBJ)
 	-rm -f *~
 	-rm -f $(NAME)
-	-rm -f $(XDP_OBJ) $(XDP_SKEL) $(XDP_SMOKE) $(XDP_FWD)
+	-rm -f $(XDP_OBJ) $(XDP_SKEL) $(XDP_SMOKE) $(XDP_FWD) $(XDP_MARKER)
 
 all	: $(NAME)
 
@@ -103,6 +103,7 @@ XDP_OBJ   = $(XDP_DIR)/ubridge_xdp.bpf.o
 XDP_SKEL  = $(XDP_DIR)/ubridge_xdp.skel.h
 XDP_SMOKE = $(XDP_DIR)/xdp_smoke
 XDP_FWD   = $(XDP_DIR)/xdp_fwd
+XDP_MARKER = $(XDP_DIR)/xdp_marker
 
 # eBPF object (CO-RE not needed yet — this program uses no kernel internals).
 $(XDP_OBJ): $(XDP_DIR)/ubridge_xdp.bpf.c
@@ -120,7 +121,11 @@ $(XDP_SMOKE): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_smoke.c $(XDP_DIR
 $(XDP_FWD): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_fwd.c $(XDP_DIR)/xdp_load.h
 	$(CC) $(CFLAGS) -I$(XDP_DIR) -o $@ $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_fwd.c -lbpf -lelf -lz
 
-xdp: $(XDP_SMOKE) $(XDP_FWD)
+# Marker proof (increment C1): ingress tx-marker -> ringbuf -> MARK line -> sink.
+$(XDP_MARKER): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_marker.c $(XDP_DIR)/xdp_load.h $(XDP_DIR)/xdp_events.h
+	$(CC) $(CFLAGS) -I$(XDP_DIR) -o $@ $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_marker.c -lbpf -lelf -lz -lpthread
+
+xdp: $(XDP_SMOKE) $(XDP_FWD) $(XDP_MARKER)
 
 # Verify the eBPF toolchain is present; prints a distro install line if not.
 check-xdp:

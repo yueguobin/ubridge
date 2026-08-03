@@ -5,6 +5,7 @@ import sys
 SUITES = [
     "test_xdp_attach",    # increment A: load/attach/counter foundation
     "test_xdp_forward",   # increment B: DEVMAP egress redirect forwarding
+    "test_xdp_marker",    # increment C1: ingress tx-marker -> ringbuf -> MARK -> sink
 ]
 
 

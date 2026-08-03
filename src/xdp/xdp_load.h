@@ -26,4 +26,10 @@ void xdp_load_detach(struct xdp_load *x);
  * peer's egress. With no peer set the program does XDP_PASS. Returns 0 / -errno. */
 int xdp_load_set_peer(struct xdp_load *x, const char *peer_ifname);
 
+/* File descriptor of the marker-events ringbuf (for ring_buffer__new). */
+int xdp_load_events_fd(struct xdp_load *x);
+
+/* Enable/disable the ingress marker (writes marker_ctrl[0]). 1 = emit, 0 = off. */
+int xdp_load_set_marker_enabled(struct xdp_load *x, int enabled);
+
 #endif /* XDP_LOAD_H */

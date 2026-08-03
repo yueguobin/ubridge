@@ -117,3 +117,20 @@ int xdp_load_set_peer(struct xdp_load *x, const char *peer_ifname)
         return -errno;
     return 0;
 }
+
+int xdp_load_events_fd(struct xdp_load *x)
+{
+    if (!x)
+        return -1;
+    return bpf_map__fd(x->skel->maps.events);
+}
+
+int xdp_load_set_marker_enabled(struct xdp_load *x, int enabled)
+{
+    __u32 key = 0, val = enabled ? 1 : 0;
+    if (!x)
+        return -EINVAL;
+    if (bpf_map_update_elem(bpf_map__fd(x->skel->maps.marker_ctrl), &key, &val, BPF_ANY))
+        return -errno;
+    return 0;
+}
