@@ -35,6 +35,7 @@ ubridge.ini
 bench/marker_bench
 src/xdp/ubridge_xdp.skel.h
 src/xdp/xdp_smoke
+src/xdp/xdp_fwd
 
 # IDE files
 .idea/

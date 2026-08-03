@@ -10,6 +10,7 @@
 #include <string.h>
 #include <net/if.h>
 #include <linux/if_link.h>   /* XDP_FLAGS_SKB_MODE */
+#include <linux/bpf.h>       /* struct bpf_devmap_val */
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 
@@ -94,4 +95,25 @@ void xdp_load_detach(struct xdp_load *x)
     bpf_xdp_detach(x->ifindex, XDP_FLAGS_SKB_MODE, NULL);
     ubridge_xdp_bpf__destroy(x->skel);
     free(x);
+}
+
+int xdp_load_set_peer(struct xdp_load *x, const char *peer_ifname)
+{
+    struct bpf_devmap_val val;
+    __u32 key = 0;
+    int ifindex;
+
+    if (!x)
+        return -EINVAL;
+
+    ifindex = (int)if_nametoindex(peer_ifname);
+    if (!ifindex)
+        return -ENODEV;
+
+    memset(&val, 0, sizeof(val));
+    val.ifindex = ifindex;          /* bpf_prog stays 0 (added in increment C) */
+
+    if (bpf_map_update_elem(bpf_map__fd(x->skel->maps.fwd), &key, &val, BPF_ANY))
+        return -errno;
+    return 0;
 }

@@ -21,4 +21,9 @@ long long xdp_load_pkt_count(struct xdp_load *x);
 /* Detach from the interface and destroy the loaded object. Safe on NULL. */
 void xdp_load_detach(struct xdp_load *x);
 
+/* Configure forwarding: set the peer TAP (egress redirect target) in the
+ * DEVMAP. After this, the XDP program bpf_redirect_map()s every packet to the
+ * peer's egress. With no peer set the program does XDP_PASS. Returns 0 / -errno. */
+int xdp_load_set_peer(struct xdp_load *x, const char *peer_ifname);
+
 #endif /* XDP_LOAD_H */

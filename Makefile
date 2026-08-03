@@ -78,7 +78,7 @@ clean:
 	-rm -f $(OBJ)
 	-rm -f *~
 	-rm -f $(NAME)
-	-rm -f $(XDP_OBJ) $(XDP_SKEL) $(XDP_SMOKE)
+	-rm -f $(XDP_OBJ) $(XDP_SKEL) $(XDP_SMOKE) $(XDP_FWD)
 
 all	: $(NAME)
 
@@ -102,6 +102,7 @@ XDP_DIR   = src/xdp
 XDP_OBJ   = $(XDP_DIR)/ubridge_xdp.bpf.o
 XDP_SKEL  = $(XDP_DIR)/ubridge_xdp.skel.h
 XDP_SMOKE = $(XDP_DIR)/xdp_smoke
+XDP_FWD   = $(XDP_DIR)/xdp_fwd
 
 # eBPF object (CO-RE not needed yet — this program uses no kernel internals).
 $(XDP_OBJ): $(XDP_DIR)/ubridge_xdp.bpf.c
@@ -115,7 +116,11 @@ $(XDP_SKEL): $(XDP_OBJ)
 $(XDP_SMOKE): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_smoke.c $(XDP_DIR)/xdp_load.h
 	$(CC) $(CFLAGS) -I$(XDP_DIR) -o $@ $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_smoke.c -lbpf -lelf -lz
 
-xdp: $(XDP_SMOKE)
+# Forwarding proof (increment B): DEVMAP egress redirect between two taps.
+$(XDP_FWD): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_fwd.c $(XDP_DIR)/xdp_load.h
+	$(CC) $(CFLAGS) -I$(XDP_DIR) -o $@ $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_fwd.c -lbpf -lelf -lz
+
+xdp: $(XDP_SMOKE) $(XDP_FWD)
 
 # Verify the eBPF toolchain is present; prints a distro install line if not.
 check-xdp:
