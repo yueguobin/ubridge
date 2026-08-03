@@ -72,12 +72,13 @@ endif
 $(NAME)	: $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(NAME) $(OBJ) $(LIBS)
 
-.PHONY: clean bench
+.PHONY: clean bench xdp check-xdp
 
 clean:
 	-rm -f $(OBJ)
 	-rm -f *~
 	-rm -f $(NAME)
+	-rm -f $(XDP_OBJ) $(XDP_SKEL) $(XDP_SMOKE)
 
 all	: $(NAME)
 
@@ -87,6 +88,38 @@ bench	: bench/marker_bench
 
 bench/marker_bench	: bench/marker_bench.c
 	$(CC) -O2 -Wall -Wextra -o bench/marker_bench bench/marker_bench.c -lpthread
+
+##############################
+# Phase 2: XDP / eBPF dataplane (see doc/xdp-tap-mode.md).
+# The eBPF object is compiled separately (clang -target bpf), turned into a
+# libbpf skeleton, and driven by the userspace loader (src/xdp/xdp_load.c).
+# TAPs only support generic (SKB-mode) XDP; the loader attaches in that mode.
+CLANG    ?= clang
+BPFTOOL  ?= $(shell command -v bpftool 2>/dev/null || echo /usr/sbin/bpftool)
+ARCH     := $(shell uname -m | sed -e 's/x86_64/x86/' -e 's/aarch64/arm64/')
+
+XDP_DIR   = src/xdp
+XDP_OBJ   = $(XDP_DIR)/ubridge_xdp.bpf.o
+XDP_SKEL  = $(XDP_DIR)/ubridge_xdp.skel.h
+XDP_SMOKE = $(XDP_DIR)/xdp_smoke
+
+# eBPF object (CO-RE not needed yet — this program uses no kernel internals).
+$(XDP_OBJ): $(XDP_DIR)/ubridge_xdp.bpf.c
+	$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) -Wall -c $< -o $@
+
+# libbpf skeleton, consumed via #include in xdp_load.c.
+$(XDP_SKEL): $(XDP_OBJ)
+	$(BPFTOOL) gen skeleton $< > $@
+
+# Standalone foundation proof (increment A); links libbpf.
+$(XDP_SMOKE): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_smoke.c $(XDP_DIR)/xdp_load.h
+	$(CC) $(CFLAGS) -I$(XDP_DIR) -o $@ $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_smoke.c -lbpf -lelf -lz
+
+xdp: $(XDP_SMOKE)
+
+# Verify the eBPF toolchain is present; prints a distro install line if not.
+check-xdp:
+	@bash scripts/check-xdp-deps.sh
 
 install : $(NAME)
 	chmod +x $(NAME)

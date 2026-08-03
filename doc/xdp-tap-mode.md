@@ -196,8 +196,36 @@ Phase 1 does not touch eBPF and can ship and be accepted independently.
 ## Build & dependencies
 
 - **Phase 1:** none new (existing C build).
-- **Phase 2:** `libbpf`, `clang` (eBPF object compile), `bpftool` (skeleton
-  generation), `libelf`. New Makefile targets for the eBPF object + skeleton.
+- **Phase 2 (XDP/eBPF):** `clang` (with the bpf target), `libbpf` (dev),
+  `bpftool`, `libelf` (dev), `zlib` (dev).
+
+Verify the toolchain before building (`scripts/check-xdp-deps.sh` probes each,
+looks in `/usr/sbin` too, and prints the install line for the detected distro
+on any miss):
+
+```
+make check-xdp          # OK: clang=… libbpf=… bpftool=…
+```
+
+Or install directly:
+
+| Distro | Command |
+|--------|---------|
+| openSUSE | `sudo zypper install clang libbpf-devel bpftool libelf-devel zlib-devel` |
+| Debian/Ubuntu | `sudo apt install clang libbpf-dev bpftool libelf-dev zlib1g-dev` |
+| Fedora/RHEL | `sudo dnf install clang libbpf-devel bpftool elfutils-libelf-devel zlib-devel` |
+| Arch | `sudo pacman -S clang libbpf bpftool libelf zlib` |
+
+Then:
+
+```
+make xdp                # eBPF object + libbpf skeleton + src/xdp/xdp_smoke
+```
+
+Runtime: loading/attaching XDP needs real `CAP_BPF`/`CAP_NET_ADMIN` — a user
+namespace is denied it (and `kernel.unprivileged_bpf_disabled=2` is locked on
+many distros). ubridge runs privileged in tap+XDP mode regardless (constraint
+#3). The foundation test lives in `tests/xdp/`.
 
 ## Testing
 
