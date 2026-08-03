@@ -9,6 +9,7 @@ SUITES = [
     "test_xdp_marker_bidir",  # increment C2: marker-coverage seam (sender-side rx)
     "test_xdp_filter",        # increment D: filter DROP/PASS + control bits (enabled/direction)
     "test_xdp_control",       # increment E: control verbs -> map updates (live behavior flips)
+    "test_xdp_expr",          # increment F: cBPF->eBPF — tcpdump expr drives marker + filter
 ]
 
 

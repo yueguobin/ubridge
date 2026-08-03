@@ -78,7 +78,7 @@ clean:
 	-rm -f $(OBJ)
 	-rm -f *~
 	-rm -f $(NAME)
-	-rm -f $(XDP_OBJ) $(XDP_SKEL) $(XDP_SMOKE) $(XDP_FWD) $(XDP_MARKER) $(XDP_FILTER) $(XDP_CONTROL)
+	-rm -f $(XDP_OBJ) $(XDP_SKEL) $(XDP_SMOKE) $(XDP_FWD) $(XDP_MARKER) $(XDP_FILTER) $(XDP_CONTROL) $(XDP_EXPR) $(XDP_DYN_OBJ) $(XDP_DYN_SKEL)
 
 all	: $(NAME)
 
@@ -106,6 +106,13 @@ XDP_FWD   = $(XDP_DIR)/xdp_fwd
 XDP_MARKER = $(XDP_DIR)/xdp_marker
 XDP_FILTER = $(XDP_DIR)/xdp_filter
 XDP_CONTROL = $(XDP_DIR)/xdp_control
+XDP_EXPR = $(XDP_DIR)/xdp_expr
+
+# F dynamic-dataplane object: dispatcher + epilogue (tail-call split). The match
+# program is generated at runtime by xdp_translate.c and is NOT in this object.
+XDP_DYN_OBJ  = $(XDP_DIR)/ubridge_xdp_dyn.bpf.o
+XDP_DYN_SKEL = $(XDP_DIR)/ubridge_xdp_dyn.skel.h
+XDP_EXPR = $(XDP_DIR)/xdp_expr
 
 # eBPF object (CO-RE not needed yet — this program uses no kernel internals).
 $(XDP_OBJ): $(XDP_DIR)/ubridge_xdp.bpf.c
@@ -136,7 +143,23 @@ $(XDP_FILTER): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_filter.c $(XDP_D
 $(XDP_CONTROL): $(XDP_SKEL) $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_control.c $(XDP_DIR)/xdp_load.h $(XDP_DIR)/xdp_events.h
 	$(CC) $(CFLAGS) -I$(XDP_DIR) -o $@ $(XDP_DIR)/xdp_load.c $(XDP_DIR)/xdp_control.c -lbpf -lelf -lz -lpthread
 
-xdp: $(XDP_SMOKE) $(XDP_FWD) $(XDP_MARKER) $(XDP_FILTER) $(XDP_CONTROL)
+# F dynamic-dataplane object + skeleton (dispatcher + epilogue; match generated).
+$(XDP_DYN_OBJ): $(XDP_DIR)/ubridge_xdp_dyn.bpf.c
+	$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) -Wall -c $< -o $@
+
+$(XDP_DYN_SKEL): $(XDP_DYN_OBJ)
+	$(BPFTOOL) gen skeleton $< > $@
+
+# cBPF->eBPF proof (increment F): a real tcpdump/libpcap expression is TRANSLATED
+# to eBPF (xdp_translate.c) and installed as prog_array[0]; the compiled-C
+# epilogue does marker/filter/forward. `expr <tcpdump>` recompiles + swaps
+# prog_array[0] at runtime (a map update; the XDP hook is never re-attached).
+# xdp_cbpf.c isolates <pcap/pcap.h> (its struct bpf_insn collides with
+# <linux/bpf.h>'s), so it is compiled alone.
+$(XDP_EXPR): $(XDP_DYN_SKEL) $(XDP_DIR)/xdp_dyn_load.c $(XDP_DIR)/xdp_translate.c $(XDP_DIR)/xdp_cbpf.c $(XDP_DIR)/xdp_expr.c $(XDP_DIR)/xdp_dyn_load.h $(XDP_DIR)/xdp_translate.h $(XDP_DIR)/xdp_cbpf.h $(XDP_DIR)/xdp_events.h
+	$(CC) $(CFLAGS) -I$(XDP_DIR) -o $@ $(XDP_DIR)/xdp_dyn_load.c $(XDP_DIR)/xdp_translate.c $(XDP_DIR)/xdp_cbpf.c $(XDP_DIR)/xdp_expr.c -lbpf -lelf -lz -lpthread -lpcap
+
+xdp: $(XDP_SMOKE) $(XDP_FWD) $(XDP_MARKER) $(XDP_FILTER) $(XDP_CONTROL) $(XDP_EXPR)
 
 # Verify the eBPF toolchain is present; prints a distro install line if not.
 check-xdp:

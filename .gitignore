@@ -39,6 +39,7 @@ src/xdp/xdp_fwd
 src/xdp/xdp_marker
 src/xdp/xdp_filter
 src/xdp/xdp_control
+src/xdp/xdp_expr
 
 # IDE files
 .idea/
