@@ -8,10 +8,11 @@ name: Test uBridge
 #   * kernel    — brctl / link / vxlan / linklocal / tap / tc / iol-anchor /
 #     capture / nio_raw / docker / bridge. Need CAP_NET_ADMIN.
 #
-# The ubuntu-latest runner is a real Azure VM (not a container), so file
-# capabilities (setcap), dummy/tap/veth interfaces and network namespaces
-# are all available with passwordless sudo. No `container: --privileged`
-# is required.
+# The runners are real Azure VMs (not containers) on both x86_64
+# (ubuntu-latest) and arm64 (ubuntu-24.04-arm, GitHub's free arm64
+# runners for public repos), so file capabilities (setcap), dummy/tap/veth
+# interfaces and network namespaces are all available with passwordless
+# sudo. No `container: --privileged` is required.
 #
 # Each tests/<module>/run_all.py exits non-zero if any suite fails, so the
 # scripts gate CI directly — no pytest dependency.
@@ -23,8 +24,12 @@ on:
 
 jobs:
   unit:
-    name: Unit tests
-    runs-on: ubuntu-latest
+    name: Unit tests [${{ matrix.runner }}]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Check out code
@@ -46,8 +51,12 @@ jobs:
   # regeneration.
   # ---------------------------------------------------------------------
   bpf-array:
-    name: eBPF array reproducible (pinned clang)
-    runs-on: ubuntu-latest
+    name: eBPF array reproducible (pinned clang) [${{ matrix.runner }}]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Check out code
@@ -69,8 +78,12 @@ jobs:
   # friction. Run right after `make`, against the in-repo ./ubridge.
   # ---------------------------------------------------------------------
   userspace:
-    name: Userspace (marker, delay, packet_filter, iol, bridge)
-    runs-on: ubuntu-latest
+    name: Userspace (marker, delay, packet_filter, iol, bridge) [${{ matrix.runner }}]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Check out code
@@ -112,8 +125,12 @@ jobs:
   # and also touch kernel state directly, so the whole process runs as root.
   # ---------------------------------------------------------------------
   kernel:
-    name: Kernel (brctl, link, vxlan, linklocal, tap, tc, iol-anchor, capture, nio_raw, docker, bridge)
-    runs-on: ubuntu-latest
+    name: Kernel (brctl, link, vxlan, linklocal, tap, tc, iol-anchor, capture, nio_raw, docker, bridge) [${{ matrix.runner }}]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Check out code
